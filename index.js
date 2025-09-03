@@ -1,16 +1,18 @@
-import "dotenv/config"
-import express from 'express';
-import multer from 'multer';
-import fs from 'fs/promises';
-import { GoogleGenAI } from '@google/genai';
+const express = require('express');
+const multer = require('multer');
+const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+dotenv.config();
 const app = express();
-const upload = multer({ dest: 'uploads/' });
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
-
-const GEMINI_MODEL = 'gemini-2.5-flash';
-
 app.use(express.json());
+
+const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const model = genAi.getGenerativeModel({ model: 'models/gemini-2.5-flash' });
+
+const upload = multer({ dest: 'uploads/' });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -23,12 +25,40 @@ app.use("/generate-text", async (req, res) => {
         if (!prompt) {
             return res.status(400).send('No prompt provided');
         }
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: prompt,
-        });
-        res.json({ result: response.text });
+        const result = await model.generateContent(prompt)
+        const response = await result.response;
+        res.json({ output: response.text() });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
+
+function imageToGenerativePart(imagePath) {
+    return {
+        inlineData: {
+            data: Buffer.from(fs.readFileSync(imagePath)).toString('base64'),
+            mimeType: 'image/jpeg',
+        },
+    };
+}
+
+app.post('/generate-from-image', upload.single('image'), async (req, res) => {
+    const prompt = req.body.prompt || 'Describe the image';
+    const image = imageToGenerativePart(req.file.path);
+
+    try {
+        const result = await model.generateContent([ prompt, image ]);
+        const response = await result.response;
+        res.json({ output: response.text() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    } finally {
+        fs.unlinkSync(req.file.path, (err) => {
+            if (err) {
+                console.error('Error deleting temporary file:', err);
+            }
+        });
+    }
+});
+
+
