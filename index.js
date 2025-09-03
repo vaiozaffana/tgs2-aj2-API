@@ -61,7 +61,10 @@ app.post("/generate-from-image", upload.single("image"), async (req, res) => {
   }
 });
 
-app.post("/generate-from-document", upload.single("document"), async (req, res) => {
+app.post(
+  "/generate-from-document",
+  upload.single("document"),
+  async (req, res) => {
     const filePath = req.file.path;
     const buffer = fs.readFileSync(filePath);
     const base64Data = buffer.toString("base64");
@@ -89,3 +92,31 @@ app.post("/generate-from-document", upload.single("document"), async (req, res) 
     }
   }
 );
+
+app.post("/generate-from-audio", upload.single("audio"), async (req, res) => {
+  const audioBuffer = fs.readFileSync(req.file.path);
+  const base64Audio = audioBuffer.toString("base64");
+  const audioPart = {
+    inlineData: {
+      data: base64Audio,
+      mimeType: req.file.mimetype,
+    },
+  };
+
+  try {
+    const result = await model.generateContent([
+      "Transcribe the following audio:",
+      audioPart,
+    ]);
+    const response = await result.response;
+    res.json({ output: response.text() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.unlinkSync(req.file.path, (err) => {
+      if (err) {
+        console.error("Error deleting temporary file:", err);
+      }
+    });
+  }
+});
